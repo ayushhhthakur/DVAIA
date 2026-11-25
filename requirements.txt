@@ -1,0 +1,36 @@
+flask>=3.0.0
+gunicorn>=21.0.0
+requests
+curl_cffi>=0.7.0
+beautifulsoup4
+lxml
+python-dotenv
+pyyaml
+PyPDF2
+python-docx
+pytesseract
+# LangChain: simple and agentic (tools, RAG, agents)
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-community>=0.3.0
+langchain-ollama>=0.2.0
+langchain-google-genai>=2.0.0
+langchain-openai>=0.2.0
+google-genai>=1.0.0
+openai>=1.0.0
+qdrant-client
+# Payload generation
+reportlab
+Pillow
+qrcode
+numpy
+scipy
+# TTS audio generation (requires ffmpeg on PATH for pydub)
+gTTS
+pydub
+faster-whisper
+# Optional Google STT fallback when WHISPER_FALLBACK_GOOGLE=true
+SpeechRecognition
+pyzbar
+# CSV dummy data generation (realistic email, name, date)
+Faker

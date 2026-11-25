@@ -1,0 +1,121 @@
+# DVAIA: Docker setup — Ollama (optional) + Qdrant + Flask app
+#
+# IMPORTANT: Run ./run_docker.sh (not plain "docker compose up") for an interactive
+# setup that asks whether to use local Ollama models or cloud (Gemini / OpenAI),
+# with requirements and .env guidance for each option.
+#
+# Quick reference:
+#   ./run_docker.sh              Interactive prompt (recommended)
+#   ./run_docker.sh --local        Local Ollama + model downloads (~9–10 GB disk)
+#   ./run_docker.sh --gemini-only  Cloud Gemini (GOOGLE_API_KEY in .env)
+#   ./run_docker.sh --openai-only  Cloud OpenAI (OPENAI_API_KEY in .env)
+#   ./run_docker.sh --skip-prompt  Use GEMINI_ONLY / OPENAI_ONLY from .env; else local
+#
+# Direct compose (no prompt):
+#   docker compose --profile ollama up --build   # local
+#   docker compose up --build                    # cloud-only if GEMINI_ONLY/OPENAI_ONLY in .env
+services:
+  ollama:
+    profiles:
+      - ollama
+    networks:
+      - dvaia
+    image: ollama/ollama:latest
+    container_name: dvaia-ollama
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11480:11434"
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        rm -f /tmp/dvaia-ollama-ready
+        /bin/ollama serve &
+        sleep 5
+        # Pin concrete tags (not floating :latest) so lab models stay stable.
+        # Stage lines are parsed by run_docker.sh for progress UI.
+        echo "DVAIA: pulling 1/4 llama3.2:3b (~2 GB)"
+        ollama pull llama3.2:3b
+        echo "DVAIA: done 1/4 llama3.2:3b"
+        echo "DVAIA: pulling 2/4 nomic-embed-text (~275 MB)"
+        ollama pull nomic-embed-text
+        echo "DVAIA: done 2/4 nomic-embed-text"
+        echo "DVAIA: pulling 3/4 qwen3:0.6b (~400 MB)"
+        ollama pull qwen3:0.6b
+        echo "DVAIA: done 3/4 qwen3:0.6b"
+        echo "DVAIA: pulling 4/4 qwen2.5vl:7b (~6 GB — largest; can take a long time)"
+        ollama pull qwen2.5vl:7b
+        echo "DVAIA: done 4/4 qwen2.5vl:7b"
+        touch /tmp/dvaia-ollama-ready
+        echo "DVAIA: all Ollama models ready"
+        wait
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/dvaia-ollama-ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 360
+      start_period: 20s
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: dvaia-qdrant
+    networks:
+      - dvaia
+    volumes:
+      - qdrant_data:/qdrant/storage
+    ports:
+      - "6333:6333"
+    restart: "no"
+
+  dvaia:
+    build: .
+    container_name: dvaia-app
+    networks:
+      - dvaia
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      - PORT=${PORT:-5000}
+      - GEMINI_ONLY=${GEMINI_ONLY:-false}
+      - OPENAI_ONLY=${OPENAI_ONLY:-false}
+      - RESET_DATA_ON_START=${RESET_DATA_ON_START:-false}
+      # Always use Compose DNS. Do not pass through .env OLLAMA_HOST=localhost:11480
+      # (that value is for host-native runs only and causes Connection refused in-container).
+      - OLLAMA_HOST=http://ollama:11434
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - DEFAULT_MODEL=${DEFAULT_MODEL:-ollama:llama3.2:3b}
+      - VISION_MODEL=${VISION_MODEL:-ollama:qwen2.5vl:7b}
+      - AGENTIC_MODEL=${AGENTIC_MODEL:-qwen3:0.6b}
+      - EMBEDDING_BACKEND=${EMBEDDING_BACKEND:-ollama}
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - DATABASE_URI=${DATABASE_URI:-data/app.db}
+      - UPLOAD_DIR=${UPLOAD_DIR:-data/uploads}
+      - PAYLOADS_OUTPUT_DIR=${PAYLOADS_OUTPUT_DIR:-data/payloads/generate}
+    ports:
+      - "${PORT:-5000}:5000"
+    depends_on:
+      qdrant:
+        condition: service_started
+      # required: false so cloud-only (no ollama profile) still starts.
+      ollama:
+        condition: service_healthy
+        required: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: "no"
+
+networks:
+  dvaia:
+    driver: bridge
+
+volumes:
+  ollama_data:
+  qdrant_data:
